@@ -44,6 +44,11 @@ class MemoryTracker:
         self.allocations: dict[str, int] = {}  # name → estimated_bytes
         self._sample_interval: int = 10000     # Sample every N virtual cycles
         self._running: bool = False
+        
+        # Virtual Garbage Collection Simulation
+        self.allocation_count: int = 0
+        self.deallocation_count: int = 0
+        self.gc_threshold: int = 700           # Standard CPython GC Generation 0 threshold
 
     def start(self) -> None:
         """Begin tracking."""

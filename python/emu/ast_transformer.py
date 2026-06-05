@@ -407,6 +407,22 @@ class EmulationTransformer(ast.NodeTransformer):
     def visit_If(self, node: ast.If) -> ast.If:
         node.body = self._transform_statement_list(node.body)
         node.orelse = self._transform_statement_list(node.orelse)
+        
+        # Simulating CPU Branch Predictor: 
+        # Wrap the IF condition evaluation so the emulator can check historical outcomes
+        branch_id = id(node)
+        node.test = ast.Call(
+            func=ast.Attribute(
+                value=ast.Name(id='__emu__', ctx=ast.Load()),
+                attr='predict_branch',
+                ctx=ast.Load()
+            ),
+            args=[
+                ast.Constant(value=branch_id),
+                self.visit(node.test)
+            ],
+            keywords=[]
+        )
         return node
 
     def visit_While(self, node: ast.While) -> ast.While:
@@ -418,6 +434,21 @@ class EmulationTransformer(ast.NodeTransformer):
         loop_test_cost = calc.total_cost + self.costs.get('While', 3)
         if loop_test_cost > 0:
             node.body.insert(0, self._make_increment_call(loop_test_cost))
+            
+        # Simulating CPU Branch Predictor for While loop exit condition
+        branch_id = id(node)
+        node.test = ast.Call(
+            func=ast.Attribute(
+                value=ast.Name(id='__emu__', ctx=ast.Load()),
+                attr='predict_branch',
+                ctx=ast.Load()
+            ),
+            args=[
+                ast.Constant(value=branch_id),
+                self.visit(node.test)
+            ],
+            keywords=[]
+        )
             
         return node
 

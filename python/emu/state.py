@@ -13,6 +13,7 @@ from emu.clock import VirtualClock
 from emu.frame_tracker import FrameTracker
 from emu.method_costs import estimate_method_cost, is_data_science_method
 from emu.gc import VirtualGC
+from emu.virtual_disk import VirtualFileSystem
 
 
 class EmulationState:
@@ -23,8 +24,23 @@ class EmulationState:
         self.clock = VirtualClock()
         self.frame_tracker = FrameTracker()
         self.virtual_gc = VirtualGC(self)
+        self.vfs = VirtualFileSystem(emu_state=self, clock=self.clock)
+        self.branch_history = {}  # branch_id -> last_boolean_result
         self._lock = threading.Lock()
         self.preloaded_conn = None  # Set by BenchmarkEnvironment
+
+    def predict_branch(self, branch_id: int, condition: bool) -> bool:
+        """
+        Simulates a CPU Branch Predictor (Pipeline Flush Penalty).
+        If the condition toggles from the historical execution, the CPU guessed wrong,
+        causing a 15-cycle pipeline flush penalty.
+        """
+        last_cond = self.branch_history.get(branch_id)
+        if last_cond is not None and last_cond != condition:
+            # Branch misprediction: Pipeline flush penalty!
+            self.increment(15)
+        self.branch_history[branch_id] = condition
+        return condition
 
     def increment(self, amount: int) -> None:
         """Advance the virtual clock and charge CPU cycles."""

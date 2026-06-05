@@ -80,7 +80,35 @@ def estimate_method_cost(obj: Any, method_name: str, args: tuple, kwargs: dict) 
     except Exception:
         pass
         
-    return cycles
+    # --- Gem5-Inspired Cache Simulator ---
+    # We apply a micro-architectural penalty multiplier to the final cycle cost based on memory contiguity.
+    # Contiguous structures (list, str, bytes, pandas arrays) fit perfectly into L1 CPU Cache lines.
+    # Scattered structures (dict, set, generic objects) cause pointer-chasing and L2/L3 Cache Misses.
+    L1_HIT_MULTIPLIER = 0.5
+    L2_MISS_MULTIPLIER = 3.0
+    
+    if isinstance(obj, (list, tuple, str, bytes, bytearray)) or is_pd_or_pl:
+        # Cache Hit: Contiguous memory layout
+        cycles = int(cycles * L1_HIT_MULTIPLIER)
+    elif isinstance(obj, (dict, set, frozenset)):
+        # Cache Miss: Hashed memory pointers scattered across RAM
+        cycles = int(cycles * L2_MISS_MULTIPLIER)
+
+    # --- Page Fault & TLB Miss Simulator ---
+    # OS Memory Paging: If an object is massive, it spans thousands of 4KB pages.
+    # Processing massive structures causes Translation Lookaside Buffer (TLB) misses
+    # and OS Page Faults, drastically slowing down memory access compared to small objects.
+    try:
+        obj_len = len(obj) if hasattr(obj, '__len__') else 1
+        if obj_len > 10_000:
+            # Logarithmic TLB miss penalty (e.g., 100k elements -> 1.25x penalty, 1M -> 1.5x penalty)
+            tlb_miss_multiplier = math.log10(obj_len) / 4.0
+            cycles = int(cycles * max(1.0, tlb_miss_multiplier))
+    except Exception:
+        pass
+
+    # Ensure minimum 1 cycle
+    return max(1, cycles)
 
 def is_data_science_method(obj: Any) -> bool:
     """Check if the object is a pandas or polars object."""

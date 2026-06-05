@@ -60,6 +60,7 @@ def create_sandbox_globals(state: EmulationState) -> Dict[str, Any]:
         'next': builtins.next,
         'object': builtins.object,
         'oct': builtins.oct,
+        'open': state.vfs.open,  # Inject Virtual File System
         'ord': builtins.ord,
         'pow': builtins.pow,
         'print': builtins.print,
@@ -90,8 +91,8 @@ def create_sandbox_globals(state: EmulationState) -> Dict[str, Any]:
 
     def _safe_import(name: str, globals=None, locals=None, fromlist=(), level=0):
         # Whitelist safe standard libraries
-        allowed = {'math', 'json', 'collections', 'itertools', 'datetime'}
-        
+        # Adding 'struct' and 'io' to allow competitors to build custom binary parsers (e.g. FIX/SBE)
+        allowed = {'math', 'json', 'collections', 'itertools', 'datetime', 'struct', 'io'}
         # We allow pandas and polars to be imported for data science
         # But we must be careful not to allow them to do arbitrary OS access
         if name in ('pandas', 'polars'):
