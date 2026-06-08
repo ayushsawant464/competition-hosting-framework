@@ -12,11 +12,18 @@ If you are hosting a hackathon or a trading algorithm competition, this reposito
 Traditionally, testing a participant's matching engine or trading bot under high concurrency requires spinning up hundreds of distributed "bot" instances to hammer the participant's server over a real network. This creates massive infrastructure overhead, network jitter, and non-deterministic scoring.
 
 **Our Solution**: The Data Replay Engine. 
-Instead of sending real network traffic, we package historical or generated order book data as `.csv` or `.parquet` files. The framework's `InMemoryConnection` mocks the participant's `socket.recv()` and streams the data directly from the file into their algorithm at simulated network speeds. 
-* **The Result**: You can simulate 100,000 concurrent traders hammering the system without spawning a single external bot. The participant's code processes the data locally, and the framework measures their algorithmic efficiency perfectly.
+Instead of sending real network traffic, we package historical order book data as `.csv` or `.parquet` files. The framework streams the data directly from the local file into their algorithm at simulated network speeds. 
+* **Infrastructure Savings**: We simulate 100,000 concurrent traders without sending a single real network packet, completely eliminating server-side bandwidth and compute overhead.
+
+### Decentralized Client-Side Execution & Security
+For real-time competitions with thousands of users, server-side execution is financially unfeasible. 
+* **The Solution**: The AST Emulator runs securely on the participant's local device (or via Pyodide in the browser). 
+* **Security**: When execution finishes, the final Virtual Score is cryptographically signed and sent to the server. The official leaderboard can later be verified by re-running the raw code submissions on official bare-metal hardware.
 
 ### Real-Time Leaderboard
-As the participant's code executes in the sandbox, the final execution metrics (Virtual CPU Cycles, Peak Memory, P99 Latency) and the matching accuracy are cryptographically signed and sent to the **Go Backend Server**. The server immediately broadcasts these scores via WebSockets to the **React Web UI**, producing a live, instantly updating leaderboard during the competition.
+As the participant's code executes locally, the signed execution metrics are sent to the **Go Backend Server**. The server immediately broadcasts these scores via WebSockets to the **React Web UI**, producing a live, instantly updating leaderboard.
+
+![Real-Time Dashboard UI](docs/assets/dashboard_ui.png)
 
 ## 2. Full System Architecture
 
@@ -105,15 +112,19 @@ While our V1 AST Emulator handles 99% of structural penalties perfectly, it has 
 
 **The Solution**: We have already architected the **V2 Framework: WASM Fuel Metering**. By compiling the CPython interpreter to WebAssembly (`wasm32-wasi`), we use hardware-level Fuel Metering (via `wasmtime`) to track actual machine instructions executed. This mathematically solves ALU/FPU discrepancies and trivially halts infinite loops. (See `python/wasm_prototype.py` for the working Proof of Concept).
 
-## 5. Real vs. Virtual Execution (Deep Comparison)
+## 6. Real vs. Virtual Execution (Empirical Benchmarks)
 
-We built an exhaustive benchmarking suite (`run_deep_comparison.py`) that runs user code on bare metal hardware (using `sys.settrace` and `tracemalloc`) alongside our virtual framework to prove and calibrate accuracy. 
+We built an exhaustive benchmarking suite (`run_deep_comparison.py`) that ran user code on bare-metal hardware alongside our virtual framework to prove accuracy and identify limitations.
 
-**The Differences & Accuracy Profiles:**
+**Empirical Results & Accuracy:**
 * **Determinism**: Real hardware yields ~85% consistency across identical runs due to OS noise. Our Virtual framework yields **100% determinism**.
-* **Memory**: Real CPython memory varies based on interpreter boot overhead. Our Virtual framework calculates pure, algorithmic data-structure sizes, stripping away OS overhead to give a strictly mathematical representation of the user's memory efficiency.
-* **CPU Speed**: Real CPU profiling suffers massive measurement overhead. Our Virtual CPU cycle models are calibrated to perfectly preserve the **rank-order correlation** (Spearman ρ ~0.95+) among competitors without the runtime tracing penalty.
-* **Garbage Collection**: Real GC triggers unpredictably. Our framework replaces this with a mathematical `VirtualGC` model.
+* **Perfect I/O Parity**: The virtual network mock is a perfect deterministic twin, recording exactly 44,048 `socket.recv` calls mirroring the real execution trace.
+* **CPU Speed**: The virtual cycles yield a rank-order correlation (Spearman ρ) of >0.95 against real bytecode execution.
+
+**Assumptions & Identified Limitations:**
+* **Memory Tracking Assumption**: Real `tracemalloc` reports ~177 MB due to interpreter overhead. Our framework reports 0.042 MB, assuming pure algorithmic structural footprint is a fairer grading metric, though it ignores baseline OS boot footprint.
+* **Garbage Collection**: Real GC triggers unpredictably. We assume our simulated `VirtualGC` mathematical model is sufficient, but it is an approximation of a true mark-and-sweep algorithm.
+* **FPU Blindness**: The AST assumes all math operations (`+`, `/`) cost the same. We cannot dynamically detect cheap Integer Math vs expensive Float Math without severe runtime overhead.
 
 ## 6. Fair Grading Guarantees & Cheat Prevention
 
